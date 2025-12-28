@@ -21,7 +21,8 @@
     "react-toastify": "^10.0.5",
     "react-transition-group": "^4.4.5",
     "redux-persist": "^6.0.0",
-    "website": "file:"
+    "website": "file:",
+    "zod": "^4.2.1"
   },
   "devDependencies": {
     "eslint": "^8",

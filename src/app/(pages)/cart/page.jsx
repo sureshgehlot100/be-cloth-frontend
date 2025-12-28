@@ -6,14 +6,15 @@ import Image from 'next/image';
 import { removeItem, updateCartQuantity } from '@/app/redux/cartSlice';
 import Link from 'next/link';
 import { toast } from 'react-toastify';
-import { createCheckoutSession } from '@/app/api/checkoutApi';
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 function Page() {
   const text = 'Cart';
   const dispatch = useDispatch();
   const cart = useSelector((state) => state.cart.items || []);
   const [loading, setLoading] = useState(false);
+  const router = useRouter();
 
   // Safe price parser: supports Number or a few string formats while encouraging numeric prices in DB
   function getPriceValue(price) {
@@ -61,23 +62,16 @@ function Page() {
         return;
       }
 
-      setLoading(true);
-
-      const cartPayload = cart.map(item => ({
-        productId: item.id,
-        quantity: Number(item.quantity) || 1,
-      }));
-
-      const data = await createCheckoutSession(cartPayload);
-
-      if (data && data.url) {
-        // redirect to Stripe Checkout page
-        window.location.href = data.url;
-      } else {
-        console.error('Invalid checkout response', data);
-        toast.error('Checkout failed. Please try again.');
-        setLoading(false);
+      // check auth token
+      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+      if (!token) {
+        // not logged in -> send to login, then user should be redirected to address after login
+        router.push('/auth/login?redirect=/checkout/address');
+        return;
       }
+
+      // logged in -> go to address entry page
+      router.push('/checkout/address');
     } catch (error) {
       console.error('Checkout error:', error);
       toast.error('Checkout failed. Please try again.');
