@@ -1,163 +1,262 @@
-'use client'
+"use client";
 
-import React, { useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { z } from 'zod';
-import axios from 'axios';
-import { toast } from 'react-toastify';
-import SliderCommen from '@/app/(component)/SliderCommen';
-import Footer from '@/app/(component)/Footer';
-import { loginApi } from '@/app/api/auth';
+import React, { useEffect, useState } from "react";
+import { orderApi } from "@/app/api/order";
+import SliderCommen from "@/app/(component)/SliderCommen";
 
-// Zod schema
-const LoginSchema = z.object({
-  email: z.string().min(1, "Email is required").email("Invalid email"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
-});
+/* ===================== HELPERS ===================== */
 
-export default function Page() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const redirect = searchParams.get('redirect') || '/';
+function formatCurrency(amount, currency) {
+  try {
+    const code = (currency || "USD").toUpperCase();
+    return new Intl.NumberFormat("en-GB", {
+      style: "currency",
+      currency: code,
+    }).format(amount);
+  } catch {
+    return `${amount} ${currency}`;
+  }
+}
 
-  const [form, setForm] = useState({ email: '', password: ''});
-  const [errors, setErrors] = useState({});
-  const [loading, setLoading] = useState(false);
+function formatDate(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return d.toLocaleString("en-GB", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
 
-  const text = 'My account';
+function StatusBadge({ type, children }) {
+  const base =
+    "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium";
 
-  const handleChange = (e) => {
-    setForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
-    setErrors(prev => ({ ...prev, [e.target.name]: null }));
-  };
-
-  const saveTokenAndSetup = (token) => {
-    // Save to localStorage
-    localStorage.setItem('token', token);
-
-    // Set default axios header for future requests (session-level)
-    axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-
-    // Validate with Zod
-    try {
-      LoginSchema.parse(form);
-      setErrors({});
-    } catch (err) {
-      // err is ZodError
-      const zodErr = err;
-      const fieldErrors = {};
-      zodErr.errors?.forEach(e => {
-        const key = e.path?.[0] || '_';
-        fieldErrors[key] = e.message;
-      });
-      setErrors(fieldErrors);
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      // Call centralized login function
-      const res = await loginApi(form.email, form.password);
-
-      // Expect backend to return { token, user }
-      const { token } = res;
-      if (!token) {
-        toast.error('Login failed: no token received');
-        setLoading(false);
-        return;
-      }
-
-      saveTokenAndSetup(token);
-
-      toast.success('Login successful');
-
-      // redirect to originally requested page (if any)
-      router.push('/cart');
-    } catch (err) {
-      console.error('Login error', err);
-      const message = err?.response?.data?.message || 'Login failed';
-      toast.error(message);
-      setLoading(false);
-    }
-  };
-
-  const handleDemoFill = () => { // optional helper while testing
-    setForm({ email: 'test@example.com', password: 'password123' });
+  const styles = {
+    paid: "bg-green-100 text-green-800",
+    pending: "bg-yellow-100 text-yellow-800",
+    failed: "bg-red-100 text-red-800",
+    placed: "bg-blue-100 text-blue-800",
+    shipped: "bg-indigo-100 text-indigo-800",
+    default: "bg-gray-100 text-gray-800",
   };
 
   return (
-    <div>
+    <span
+      className={`${base} ${styles[type?.toLowerCase()] || styles.default
+        }`}
+    >
+      {children}
+    </span>
+  );
+}
+
+/* ===================== COMPONENT ===================== */
+
+export default function Orders() {
+  const text = 'My-Account';
+  const [orders, setOrders] = useState([]);
+  const [expanded, setExpanded] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const toggle = (id) =>
+    setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
+
+  const copyToClipboard = async (text) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      alert("Copied to clipboard");
+    } catch {
+      alert("Copy failed");
+    }
+  };
+
+  /* ===================== FETCH ORDERS ===================== */
+  useEffect(() => {
+    let mounted = true;
+
+    const fetchOrders = async () => {
+      setLoading(true);
+      setError(null);
+
+      try {
+        const data = await orderApi(); // ✅ await promise
+        if (mounted) setOrders(data || []);
+      } catch (err) {
+        const msg =
+          err?.response?.data?.message ||
+          err.message ||
+          "Failed to load orders";
+        if (mounted) setError(msg);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+
+    fetchOrders();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  /* ===================== UI ===================== */
+
+  return (
+    <>
       <SliderCommen text={text} />
-      <div className="max-w-[80%] mx-auto my-[3%]">
-        <h2 className="text-6xl font-[300] m-4">Login</h2>
+      <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white py-8 px-4 md:px-8 lg:px-12">
+        <div className="max-w-6xl mx-auto">
+          <header className="mb-6">
+            <h1 className="text-2xl md:text-3xl font-semibold">Orders</h1>
+            <p className="text-sm text-gray-500">
+              Recent orders —
+            </p>
+          </header>
 
-        <div className="max-w-full m-3 p-4 md:p-6 lg:p-8 border-2 bg-white rounded-lg shadow-lg">
-          <form onSubmit={handleSubmit}>
-            <div className="mb-4">
-              <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="email">
-                Email
-              </label>
-              <input
-                id="email"
-                name="email"
-                value={form.email}
-                onChange={handleChange}
-                className={`appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline ${errors.email ? 'border-red-500' : ''}`}
-                type="text"
-                placeholder="you@example.com"
-              />
-              {errors.email && <p className="text-sm text-red-500 mt-1">{errors.email}</p>}
-            </div>
+          {loading && <p className="text-gray-500">Loading orders...</p>}
+          {error && <p className="text-red-500 mb-4">{error}</p>}
 
-            <div className="mb-4">
-              <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="password">
-                Password
-              </label>
-              <input
-                id="password"
-                name="password"
-                value={form.password}
-                onChange={handleChange}
-                className={`appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline ${errors.password ? 'border-red-500' : ''}`}
-                type="password"
-                placeholder="Password"
-              />
-              {errors.password && <p className="text-sm text-red-500 mt-1">{errors.password}</p>}
-            </div>
-
-            <div className="flex items-center">
-              <button
-                disabled={loading}
-                className="bg-black hover:bg-orange-700 text-white font-bold py-2 px-6 rounded focus:outline-none focus:shadow-outline"
-                type="submit"
-              >
-                {loading ? 'Logging in...' : 'Login'}
-              </button>
-
-              <button type="button" onClick={handleDemoFill} className="ml-4 text-sm text-gray-600">
-                Fill demo
-              </button>
-
-              <div className="flex items-center ml-4">
-                <input id="remember-me" type="checkbox" className="w-4 h-4 text-orange-500 bg-gray-100 rounded border-gray-300 focus:ring-orange-500" />
-                <label htmlFor="remember-me" className="ml-2 text-sm text-gray-700">Remember Me</label>
+          <div className="grid gap-6 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+            {!loading && orders.length === 0 && (
+              <div className="col-span-full text-center text-gray-400 border rounded-lg p-6">
+                No orders found
               </div>
-            </div>
+            )}
 
-            <div className="text-sm text-gray-700 mt-4">
-              <a className="inline-block align-baseline font-bold text-sm py-4 text-orange-500 hover:text-orange-800" href="/forgot-password">
-                Forgot Password?
-              </a>
-            </div>
-          </form>
+            {orders.map((order) => (
+              <article
+                key={order._id}
+                className="bg-white border shadow-sm rounded-2xl p-4 hover:shadow-lg transition"
+              >
+                <div className="flex justify-between">
+                  <div>
+                    <h2 className="font-medium text-lg">
+                      Order #{(order.orderRef || order._id).slice(-6)}
+                    </h2>
+                    <p className="text-sm text-gray-500">
+                      {order.customerEmail}
+                    </p>
+                  </div>
+
+                  <div className="text-right">
+                    <div className="flex gap-2 justify-end">
+                      <StatusBadge type={order.paymentStatus}>
+                        {order.paymentStatus}
+                      </StatusBadge>
+                      <StatusBadge type={order.orderStatus}>
+                        {order.orderStatus}
+                      </StatusBadge>
+                    </div>
+                    <p className="text-sm text-gray-600 mt-1">
+                      {formatDate(order.createdAt)}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="border-t mt-4 pt-3">
+                  <div className="flex justify-between">
+                    <div>
+                      <p className="font-semibold">
+                        {formatCurrency(order.amount, order.currency)}
+                      </p>
+                      <p className="text-xs text-gray-400">
+                        {order.items?.length || 0} item(s)
+                      </p>
+                    </div>
+
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => toggle(order._id)}
+                        className="border px-3 py-1 rounded text-sm"
+                      >
+                        {expanded[order._id] ? "Hide" : "Details"}
+                      </button>
+
+                      <button
+                        onClick={() =>
+                          copyToClipboard(
+                            order.stripeSessionId ||
+                            order.orderRef ||
+                            order._id
+                          )
+                        }
+                        className="bg-gray-100 px-3 py-1 rounded text-sm"
+                      >
+                        Copy Ref
+                      </button>
+                    </div>
+                  </div>
+
+                  {expanded[order._id] && (
+                    <div className="mt-3 space-y-3 text-sm">
+                      <div>
+                        <p className="font-medium">Shipping</p>
+                        {order.shipping ? (
+                          <>
+                            <p className="text-xs text-gray-500">
+                              {order.shipping.fullName} •{" "}
+                              {order.shipping.phone}
+                            </p>
+                            <p className="text-xs text-gray-400">
+                              {order.shipping.addressLine1},{" "}
+                              {order.shipping.city},{" "}
+                              {order.shipping.state}{" "}
+                              {order.shipping.postalCode},{" "}
+                              {order.shipping.country}
+                            </p>
+                          </>
+                        ) : (
+                          <p className="text-xs text-gray-400">—</p>
+                        )}
+                      </div>
+
+                      <div>
+                        <p className="font-medium">Items</p>
+                        <ul className="mt-2 space-y-2">
+                          {order.items?.map((it, idx) => (
+                            <li
+                              key={idx}
+                              className="flex justify-between border rounded p-2"
+                            >
+                              <div>
+                                <p className="font-medium">{it.name}</p>
+                                <p className="text-xs text-gray-400">
+                                  Qty: {it.quantity}
+                                </p>
+                              </div>
+                              <p className="font-semibold">
+                                {formatCurrency(
+                                  it.price * it.quantity,
+                                  order.currency
+                                )}
+                              </p>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+
+                      <div className="flex justify-between text-xs text-gray-500">
+                        <span>
+                          Updated: {formatDate(order.updatedAt)}
+                        </span>
+                        <span className="font-semibold">
+                          Total:{" "}
+                          {formatCurrency(order.amount, order.currency)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </article>
+            ))}
+          </div>
+
+          <footer className="mt-8 text-center text-xs text-gray-400">
+            Showing {orders.length} orders
+          </footer>
         </div>
       </div>
-      <Footer />
-    </div>
+    </>
   );
 }
